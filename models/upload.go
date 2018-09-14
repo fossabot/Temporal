@@ -11,10 +11,12 @@ import (
 	"github.com/lib/pq"
 )
 
+// Upload is our model and database table for all uploads into temporal
 type Upload struct {
 	gorm.Model
 	Hash               string `gorm:"type:varchar(255);not null;"`
 	Type               string `gorm:"type:varchar(255);not null;"` //  file, pin
+	Name               string `gorm:"type:varchar(255)"`
 	NetworkName        string `gorm:"type:varchar(255)"`
 	HoldTimeInMonths   int64  `gorm:"type:integer;not null;"`
 	UserName           string `gorm:"type:varchar(255);not null;"`
@@ -24,6 +26,7 @@ type Upload struct {
 
 const dev = true
 
+// UploadManager is our wrapper used to manipulate the uploads table
 type UploadManager struct {
 	DB *gorm.DB
 }
@@ -34,8 +37,8 @@ func NewUploadManager(db *gorm.DB) *UploadManager {
 }
 
 // NewUpload is used to create a new upload in the database
-func (um *UploadManager) NewUpload(contentHash, uploadType, networkName, username string, holdTimeInMonths int64) (*Upload, error) {
-	_, err := um.FindUploadByHashAndNetwork(contentHash, networkName)
+func (um *UploadManager) NewUpload(contentHash, uploadType, networkName, username, name string, holdTimeInMonths int64) (*Upload, error) {
+	_, err := um.FindUploadByHashAndNetworkAndUser(contentHash, networkName, username)
 	if err == nil {
 		// this means that there is already an upload in hte database matching this content hash and network name, so we will skip
 		return nil, errors.New("attempting to create new upload entry when one already exists in database")
@@ -47,6 +50,7 @@ func (um *UploadManager) NewUpload(contentHash, uploadType, networkName, usernam
 	upload := Upload{
 		Hash:               contentHash,
 		Type:               uploadType,
+		Name:               name,
 		NetworkName:        networkName,
 		HoldTimeInMonths:   holdTimeInMonths,
 		UserName:           username,
@@ -61,7 +65,7 @@ func (um *UploadManager) NewUpload(contentHash, uploadType, networkName, usernam
 
 // UpdateUpload is used to upadte an already existing upload
 func (um *UploadManager) UpdateUpload(holdTimeInMonths int64, username, contentHash, networkName string) (*Upload, error) {
-	upload, err := um.FindUploadByHashAndNetwork(contentHash, networkName)
+	upload, err := um.FindUploadByHashAndNetworkAndUser(contentHash, networkName, username)
 	if err != nil {
 		return nil, err
 	}
@@ -134,6 +138,7 @@ func (um *UploadManager) RunTestDatabaseGarbageCollection() (*[]Upload, error) {
 	return &deletedUploads, nil
 }
 
+// FindUploadsByNetwork is used to retrieve all uploads for a given network
 func (um *UploadManager) FindUploadsByNetwork(networkName string) (*[]Upload, error) {
 	uploads := &[]Upload{}
 	if check := um.DB.Where("network_name = ?", networkName).Find(uploads); check.Error != nil {
@@ -141,9 +146,11 @@ func (um *UploadManager) FindUploadsByNetwork(networkName string) (*[]Upload, er
 	}
 	return uploads, nil
 }
-func (um *UploadManager) FindUploadByHashAndNetwork(hash, networkName string) (*Upload, error) {
+
+// FindUploadByHashAndNetworkAndUser is used to find an upload based on its hash, network name, and user who uploaded
+func (um *UploadManager) FindUploadByHashAndNetworkAndUser(hash, networkName, username string) (*Upload, error) {
 	upload := &Upload{}
-	if check := um.DB.Where("hash = ? AND network_name = ?", hash, networkName).First(upload); check.Error != nil {
+	if check := um.DB.Where("hash = ? AND network_name = ? AND user_name = ?", hash, networkName, username).First(upload); check.Error != nil {
 		return nil, check.Error
 	}
 	return upload, nil
